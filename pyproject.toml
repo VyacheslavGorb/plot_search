@@ -11,4 +11,7 @@ dependencies = [
     "shapely>=2.0.7",
     "pyproj>=3.7.1",
     "tenacity>=9.0.0",
+    "prefect>=3.7.5",
+    "sqlalchemy>=2.0.51",
+    "psycopg2-binary>=2.9.12",
 ]
