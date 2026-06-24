@@ -20,7 +20,7 @@ The pipeline runs locally on an Ubuntu personal computer. It relies on a contain
 .
 ├── data/                  # Local storage for non-database data
 │   ├── raw/               # Raw HTML downloads for debugging
-│   ├── images/            # Downloaded listing images for OCR
+│   ├── images/            # Downloaded listing images for VLM processing
 │   └── dumps/             # Spatial data dumps (EGiB, BDOT10k, ISOK)
 ├── docker/                # Docker and infrastructure configs
 │   └── docker-compose.yml
@@ -100,7 +100,7 @@ Stores the exact output from the scrapers before any AI extraction or parsing.
 - `scraped_at` (Timestamp)
 
 #### Table: `normalized_listings`
-Stores the structured data after Ollama/PaddleOCR processing.
+Stores the structured data after Ollama text/vision processing.
 - `id` (UUID, Primary Key)
 - `raw_listing_id` (UUID, Foreign Key)
 - `status` (String: 'pending_geometry', 'failed_extraction', 'rejected', etc.)
@@ -108,5 +108,5 @@ Stores the structured data after Ollama/PaddleOCR processing.
 - `declared_area` (Numeric)
 - `extracted_parcel_number` (String, nullable)
 - `extracted_gmina` (String, nullable)
-- `extraction_method` (String: 'llm_text', 'ocr_fallback', 'manual')
+- `extraction_method` (String: 'llm_text', 'vlm_vision', 'manual')
 - `created_at` (Timestamp)

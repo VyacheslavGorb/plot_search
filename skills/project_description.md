@@ -51,7 +51,7 @@ graph TD
         subgraph "Phase 1: Ingestion (Prefect Subflow)"
             A[Real Estate Portals] -->|Playwright Stealth| B(Scraping Task)
             B -->|Download| C[Local FS - Raw Images/HTML]
-            B -->|Text/PaddleOCR| D{Listing Normalization}
+            B -->|Text/VLM Vision| D{Listing Normalization}
         end
 
         subgraph "Phase 2: Entity Resolution (Atomic Task)"
@@ -93,7 +93,7 @@ The pipeline is designed as a non-productionized script executed ad-hoc on a sin
 * **Data Processing:** GeoPandas, Shapely
 * **Scraping Engine:**
   * Playwright Stealth (connecting to a local Chrome instance in debug mode to bypass anti-bot protections)
-  * EasyOCR (for extracting parcel numbers from listing images)
+  * qwen2.5-vl:7b via Ollama (Local VLM for extracting parcel numbers from listing images)
   * Ollama (Local LLM for unstructured text parsing)
 * **Routing:** Local OSRM instance (offline base routing) and Google Maps Directions API
 * **Notifications:** Telegram Bot API
@@ -104,7 +104,7 @@ The pipeline is designed as a non-productionized script executed ad-hoc on a sin
 - **Scraping Subflow:** Connect to Chrome in debug mode using Playwright Stealth to navigate listings (e.g., Otodom) and bypass anti-bot protections. This step is orchestrated as a dedicated Prefect subworkflow to allow independent retries and isolation.
 - **Extraction & Storage:** Download listing metadata, descriptions, and images. Save raw HTML and images to the local filesystem for debugging.
 - **Text Parsing:** Use a local LLM (Ollama) to extract the `gmina` and refine the parcel number from unstructured text.
-- **OCR Parsing:** Should only be executed as a fallback if no parcel number is successfully extracted from the listing text. Run PaddleOCR on the downloaded images to extract potential parcel numbers (`numer działki`).
+- **VLM Vision Parsing:** Should only be executed as a fallback if no parcel number is successfully extracted from the listing text. Run `qwen2.5-vl:7b` on the downloaded images to extract potential parcel numbers (`numer działki`).
 - **Normalization:** Map the extracted data into a Standardized Listing JSON schema to decouple the source website from the rest of the pipeline.
 
 ### Phase 2: Entity Resolution & Verification

@@ -42,16 +42,16 @@ Extracting the parcel number (`numer działki`) and municipality (`gmina`) from 
 1. **Query Ollama:** Send the `raw_text` to the local Ollama endpoint (`http://localhost:11434/api/generate`).
 2. **Prompt Design:** Ask the LLM to strictly extract the parcel number and gmina in a JSON format.
    * *Example prompt:* "Extract the parcel number (numer działki) and municipality (gmina) from the following Polish real estate listing. Return ONLY a JSON object: `{\"parcel_number\": \"...\", \"gmina\": \"...\"}`. If not found, return nulls."
-3. **Parse Result:** If a valid parcel number is found, proceed to Normalization. If not, trigger the OCR Fallback.
+3. **Parse Result:** If a valid parcel number is found, proceed to Normalization. If not, trigger the VLM Vision Fallback.
 
-### 2.3 OCR Fallback with PaddleOCR (Task)
-If the seller put the parcel number in a screenshot or map image rather than the text, we scan the downloaded images. PaddleOCR is used instead of EasyOCR for better accuracy and performance.
+### 2.3 VLM Vision Fallback with qwen2.5-vl:7b (Task)
+If the seller put the parcel number in a screenshot or map image rather than the text, we scan the downloaded images. `qwen2.5-vl:7b` is used via Ollama to extract text from images.
 
 **Implementation Steps:**
 1. **Condition:** Only run if `extracted_parcel_number` is null after LLM parsing.
 2. **Process Images:** Iterate through images in `data/images/{listing_id}/`.
-3. **Execute PaddleOCR:** Run optical character recognition on each image.
-4. **Pattern Matching:** Use Regex to look for standard Polish parcel number formats (e.g., `123/4`, `141201_1.0001.123`) in the OCR output.
+3. **Execute VLM:** Run vision-language model inference on each image to extract the parcel number.
+4. **Pattern Matching:** Use Regex to look for standard Polish parcel number formats (e.g., `123/4`, `141201_1.0001.123`) in the VLM output.
 5. **Early Exit:** Stop processing images as soon as a valid parcel number is found.
 
 ### 2.4 Normalization & Storage (Task)
@@ -59,11 +59,11 @@ Consolidate the findings and store them in a standard format, decoupled from the
 
 **Implementation Steps:**
 1. **Map Data:** Combine the scraped metadata (price, area) with the extracted entities (`parcel_number`, `gmina`).
-2. **Record Extraction Method:** Note whether the parcel number was found via `llm_text` or `ocr_fallback`.
+2. **Record Extraction Method:** Note whether the parcel number was found via `llm_text` or `vlm_vision`.
 3. **Database Insert:** Save the record to the `normalized_listings` table.
 4. **Set Status:** Set the status to `pending_geometry` so Phase 2 knows this listing is ready for ULDK API lookup.
 
 ## 3. Error Handling & Retries
 - **Playwright Timeouts:** Configure Prefect task retries for network timeouts during scraping.
-- **LLM Hallucinations:** Validate the LLM JSON output. If it fails parsing or hallucinated a non-existent format, mark `extraction_method` as failed and move to OCR.
-- **Missing Data:** If both LLM and OCR fail to find a parcel number, the listing cannot be processed automatically. Set the `normalized_listings` status to `failed_extraction` (requires manual review).
+- **LLM Hallucinations:** Validate the LLM JSON output. If it fails parsing or hallucinated a non-existent format, mark `extraction_method` as failed and move to VLM.
+- **Missing Data:** If both LLM and VLM fail to find a parcel number, the listing cannot be processed automatically. Set the `normalized_listings` status to `failed_extraction` (requires manual review).
