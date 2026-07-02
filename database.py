@@ -14,8 +14,10 @@ class StatusEnum(str, enum.Enum):
     NEW = "NEW"
     PARSED = "PARSED"
     GEOCODED = "GEOCODED"
+    ROUTED = "ROUTED"
     FAILED_PARSING = "FAILED_PARSING"
     FAILED_GEOCODING = "FAILED_GEOCODING"
+    FAILED_ROUTING = "FAILED_ROUTING"
 
 class RawListing(Base):
     __tablename__ = "raw_listings"
@@ -50,6 +52,7 @@ class ParsedListing(Base):
 
     raw_listing = relationship("RawListing", back_populates="parsed_listing")
     geocoded_parcel = relationship("GeocodedParcel", back_populates="parsed_listing", uselist=False)
+    route_evaluations = relationship("RouteEvaluation", back_populates="parsed_listing", cascade="all, delete-orphan")
 
 class GeocodedParcel(Base):
     __tablename__ = "geocoded_parcels"
@@ -63,6 +66,22 @@ class GeocodedParcel(Base):
     geocoded_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     parsed_listing = relationship("ParsedListing", back_populates="geocoded_parcel")
+
+class RouteEvaluation(Base):
+    __tablename__ = "route_evaluations"
+
+    id = Column(String, primary_key=True, index=True)
+    listing_id = Column(String, ForeignKey("parsed_listings.id"), index=True, nullable=False)
+    target_name = Column(String, nullable=False) # e.g. "VARSO_TOWER", "WARSAW_HUB"
+    route_mode = Column(String, nullable=False) # e.g. "CAR_ONLY", "CAR_TRANSIT", "BICYCLE_TRANSIT"
+    
+    time_0800_mins = Column(Float, nullable=True)
+    time_1400_mins = Column(Float, nullable=True)
+    time_1700_mins = Column(Float, nullable=True)
+    
+    evaluated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    parsed_listing = relationship("ParsedListing", back_populates="route_evaluations")
 
 def init_db():
     Base.metadata.create_all(bind=engine)

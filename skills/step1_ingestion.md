@@ -9,61 +9,41 @@ triggers:
 
 # Phase 1: Multi-Source Ingestion & Normalization
 
-This document details the implementation of the first phase of the pipeline. The goal is to scrape real estate listings, extract critical data (especially the parcel number and municipality), and normalize the data into a standard schema for subsequent spatial analysis.
+This document details the implementation of the first phase of the pipeline. The goal is to scrape real estate listings, extract critical data (especially the parcel number), and normalize the data into a standard schema for subsequent spatial analysis.
 
-## 1. Subflow Overview
+## 1. Flow Overview
 
-This phase is implemented as a **Prefect Subflow**. This allows ingestion tasks to run, fail, and retry independently from the complex spatial calculations in later phases.
+This phase is implemented using **Prefect Flows** and executed via `main.py`. This allows ingestion tasks to run, fail, and retry independently from the complex spatial calculations in later phases.
 
-**Prefect Flow:** `ingest_and_normalize_listings`
-**Input:** A list of listing URLs or a search page URL.
-**Output:** Database records inserted into the `normalized_listings` table.
+**Prefect Flows:** `scrape_flow` (scraper.py) and `parse_flow` (parser.py)
+**Input:** A search page URL.
+**Output:** Database records inserted into `raw_listings` and `parsed_listings`.
 
 **Idempotency & State:**
-The ingestion step is strictly idempotent. Before scraping a listing, the pipeline checks the `raw_listings` table by `source_url`. If a record exists and its status indicates it has already been parsed or permanently failed, it is skipped. Entities that failed on a particular step are not processed further. Only new URLs or those marked explicitly for retry are processed.
+The ingestion step is strictly idempotent. Before scraping a listing, the pipeline checks the `raw_listings` table by `source_url`. If a record exists, it skips scraping it (when running in `incremental` mode). Parsed listings are stored with `StatusEnum.NEW` until they are successfully processed by the geocoder.
 
 ## 2. Component Details
 
-### 2.1 Playwright Stealth Scraper (Task)
-To avoid anti-bot protections (like Cloudflare on Otodom/OLX), the scraper connects to an already-running local instance of Google Chrome opened with a remote debugging port.
+### 2.1 Playwright Stealth Scraper (`scrape_flow`)
+To avoid anti-bot protections, the scraper connects to an already-running local instance of Google Chrome opened with a remote debugging port.
 
 **Implementation Steps:**
 1. **Connect to Chrome:** `playwright.connect_over_cdp("http://localhost:9222")`
-2. **Navigate:** Open the listing URL.
-3. **Extract Metadata:** Pull price, declared area, and the main description text.
-4. **Download Images:** Find image URLs and download them to `data/images/{listing_id}/`.
-5. **Save Raw HTML:** Save the page source to `data/raw/{listing_id}.html` for debugging purposes.
-6. **Persist:** Insert the raw data into the `raw_listings` table.
+2. **Navigate:** Open the search URL, handle pagination.
+3. **Extract Metadata:** Pull price, declared area, text description, and characteristics from `__NEXT_DATA__` or DOM elements.
+4. **Extract Image URLs:** Extract high-quality image URLs instead of downloading them directly to disk.
+5. **Persist:** Insert the data into the `raw_listings` table using the `save_raw_listing` task.
 
-### 2.2 Text Parsing via Local LLM (Task)
-Extracting the parcel number (`numer działki`) and municipality (`gmina`) from unstructured text is complex. We use a local LLM via Ollama.
-
-**Implementation Steps:**
-1. **Query Ollama:** Send the `raw_text` to the local Ollama endpoint (`http://localhost:11434/api/generate`).
-2. **Prompt Design:** Ask the LLM to strictly extract the parcel number and gmina in a JSON format.
-   * *Example prompt:* "Extract the parcel number (numer działki) and municipality (gmina) from the following Polish real estate listing. Return ONLY a JSON object: `{\"parcel_number\": \"...\", \"gmina\": \"...\"}`. If not found, return nulls."
-3. **Parse Result:** If a valid parcel number is found, proceed to Normalization. If not, trigger the VLM Vision Fallback.
-
-### 2.3 VLM Vision Fallback with qwen2.5-vl:7b (Task)
-If the seller put the parcel number in a screenshot or map image rather than the text, we scan the downloaded images. `qwen2.5-vl:7b` is used via Ollama to extract text from images.
+### 2.2 Text Parsing via Local LLM (`parse_flow`)
+Extracting the parcel number (`numer działki`) and utilities presence from unstructured text is handled via a local LLM (Ollama).
 
 **Implementation Steps:**
-1. **Condition:** Only run if `extracted_parcel_number` is null after LLM parsing.
-2. **Process Images:** Iterate through images in `data/images/{listing_id}/`.
-3. **Execute VLM:** Run vision-language model inference on each image to extract the parcel number.
-4. **Pattern Matching:** Use Regex to look for standard Polish parcel number formats (e.g., `123/4`, `141201_1.0001.123`) in the VLM output.
-5. **Early Exit:** Stop processing images as soon as a valid parcel number is found.
-
-### 2.4 Normalization & Storage (Task)
-Consolidate the findings and store them in a standard format, decoupled from the source portal.
-
-**Implementation Steps:**
-1. **Map Data:** Combine the scraped metadata (price, area) with the extracted entities (`parcel_number`, `gmina`).
-2. **Record Extraction Method:** Note whether the parcel number was found via `llm_text` or `vlm_vision`.
-3. **Database Insert:** Save the record to the `normalized_listings` table.
-4. **Set Status:** Set the status to `pending_geometry` so Phase 2 knows this listing is ready for ULDK API lookup.
+1. **Query Ollama:** Send the `description` and `raw_characteristics` to the local Ollama endpoint (`http://localhost:11434/api/generate`) using the `qwen2.5:14b-instruct` model.
+2. **Prompt Design:** Ask the LLM to extract the parcel number and media (water, electricity, gas, sewage) using a strict Pydantic JSON schema (`LLMExtraction`).
+3. **Normalization:** The extracted parcel number is returned as a single nullable string.
+4. **Database Insert:** Save the validated record to the `parsed_listings` table.
+5. **Set Status:** Set the status to `StatusEnum.NEW` so the Geocoder flow knows this listing is ready for ULDK API lookup, and update the raw listing status to `PARSED`.
 
 ## 3. Error Handling & Retries
-- **Playwright Timeouts:** Configure Prefect task retries for network timeouts during scraping.
-- **LLM Hallucinations:** Validate the LLM JSON output. If it fails parsing or hallucinated a non-existent format, mark `extraction_method` as failed and move to VLM.
-- **Missing Data:** If both LLM and VLM fail to find a parcel number, the listing cannot be processed automatically. Set the `normalized_listings` status to `failed_extraction` (requires manual review).
+- **Playwright Timeouts:** The `save_raw_listing` task is configured with 3 retries and a 5-second delay to handle transient database or connectivity issues.
+- **LLM Hallucinations:** The `parse_with_llm` task validates the LLM JSON output against the `LLMExtraction` Pydantic schema. It is configured with 3 retries. If parsing fails, the raw listing is marked as `FAILED_PARSING`.

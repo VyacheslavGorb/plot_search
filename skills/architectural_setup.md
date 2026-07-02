@@ -18,15 +18,15 @@ The pipeline runs locally on an Ubuntu personal computer. It relies on a contain
 ### 1.1 Directory Structure
 ```text
 .
-├── data/                  # Local storage for non-database data
-│   ├── raw/               # Raw HTML downloads for debugging
-│   ├── images/            # Downloaded listing images for VLM processing
-│   └── dumps/             # Spatial data dumps (EGiB, BDOT10k, ISOK)
-├── docker/                # Docker and infrastructure configs
-│   └── docker-compose.yml
-├── pipeline/              # Prefect workflows and tasks
-├── core/                  # Shared database models and utilities
-└── scripts/               # Utility and one-off scripts
+├── docker-compose.yml     # Infrastructure (PostgreSQL)
+├── main.py                # Master pipeline orchestrator
+├── database.py            # SQLAlchemy models and schema definitions
+├── schema.py              # Pydantic schemas for LLM extraction
+├── flows/                 # Prefect workflows and tasks
+│   ├── scraper.py         # Playwright Otodom scraping flow
+│   ├── parser.py          # Ollama LLM text extraction flow
+│   └── geocoder.py        # ULDK geometry and spatial logic flow
+└── skills/                # Documentation and architectural notes
 ```
 
 ### 1.2 Docker Compose Configuration (`docker/docker-compose.yml`)
@@ -72,41 +72,41 @@ volumes:
   ollama_data:
 ```
 
-## 2. Database Schema (General & Phase 1)
+## 2. Database Schema
 
-We use **PostgreSQL with PostGIS** (`GeoAlchemy2` and `SQLAlchemy 2.0 (asyncpg)`).
+We use **PostgreSQL with PostGIS** and `SQLAlchemy 2.0`. The database is managed using `database.py`.
 
-### 2.1 ORM Configuration
+### 2.1 Pipeline State Management & Idempotency
 
-Use SQLAlchemy's declarative base. Async sessions are preferred for database interactions to maintain non-blocking behavior during API calls and ingestion.
+All pipeline steps must be strictly **idempotent**. We use a `StatusEnum` to track the state of each record: `NEW`, `PARSED`, `GEOCODED`, `FAILED_PARSING`, and `FAILED_GEOCODING`. Entities that have successfully passed a step or permanently failed a step are skipped in subsequent pipeline runs (incremental mode).
 
-### 2.2 Pipeline State Management & Idempotency
-
-All pipeline steps must be strictly **idempotent**. Each table corresponding to a step (including `raw_listings`, `normalized_listings`, and future spatial/scoring tables) must have a `status` column. Entities that have successfully passed a step or permanently failed a step should not be re-processed during subsequent runs.
-
-### 2.3 Phase 1 Schemas
-
-During Phase 1 (Ingestion), we store raw scraped data and the normalized representation.
+### 2.2 Core Tables
 
 #### Table: `raw_listings`
 Stores the exact output from the scrapers before any AI extraction or parsing.
-- `id` (UUID, Primary Key)
+- `id` (String, Primary Key)
 - `source_url` (String, Unique)
-- `source_portal` (String, e.g., 'otodom', 'olx')
-- `status` (String: 'pending_parsing', 'parsed', 'failed_parsing', etc.)
-- `raw_html_path` (String, path to local file)
-- `raw_text` (Text)
-- `images_paths` (JSONB, list of local paths)
+- `title`, `description`, `raw_characteristics` (Text)
+- `price`, `area`, `location_lat`, `location_lon` (Float)
+- `is_exact_location` (Boolean)
+- `images` (JSONB, list of image URLs)
+- `advertiser_type` (String)
+- `status` (Enum: `StatusEnum.NEW` initially)
 - `scraped_at` (Timestamp)
 
-#### Table: `normalized_listings`
-Stores the structured data after Ollama text/vision processing.
-- `id` (UUID, Primary Key)
-- `raw_listing_id` (UUID, Foreign Key)
-- `status` (String: 'pending_geometry', 'failed_extraction', 'rejected', etc.)
-- `price` (Numeric)
-- `declared_area` (Numeric)
-- `extracted_parcel_number` (String, nullable)
-- `extracted_gmina` (String, nullable)
-- `extraction_method` (String: 'llm_text', 'vlm_vision', 'manual')
-- `created_at` (Timestamp)
+#### Table: `parsed_listings`
+Stores the structured data after Ollama LLM text extraction.
+- `id` (String, Foreign Key to `raw_listings.id`, Primary Key)
+- `parcel_number` (String, nullable)
+- `media` (JSONB, structured utility presence)
+- `status` (Enum: `StatusEnum.NEW` initially, then `GEOCODED` or `FAILED_GEOCODING`)
+- `parsed_at` (Timestamp)
+
+#### Table: `geocoded_parcels`
+Stores the spatial geometry retrieved from the ULDK API based on the parsed parcel number or exact location.
+- `id` (String, Foreign Key to `parsed_listings.id`, Primary Key)
+- `teryt` (String, official parcel ID)
+- `polygon_wkt` (Text, WKT geometry of the parcel)
+- `is_unsubdivided` (Boolean, true if cadastral area differs significantly from declared area)
+- `location_hierarchy` (JSONB)
+- `geocoded_at` (Timestamp)

@@ -101,11 +101,10 @@ The pipeline is designed as a non-productionized script executed ad-hoc on a sin
 ## 5. Detailed Pipeline Blueprint
 
 ### Phase 1: Multi-Source Ingestion & Normalization
-- **Scraping Subflow:** Connect to Chrome in debug mode using Playwright Stealth to navigate listings (e.g., Otodom) and bypass anti-bot protections. This step is orchestrated as a dedicated Prefect subworkflow to allow independent retries and isolation.
-- **Extraction & Storage:** Download listing metadata, descriptions, and images. Save raw HTML and images to the local filesystem for debugging.
-- **Text Parsing:** Use a local LLM (Ollama) to extract the `gmina` and refine the parcel number from unstructured text.
-- **VLM Vision Parsing:** Should only be executed as a fallback if no parcel number is successfully extracted from the listing text. Run `qwen2.5-vl:7b` on the downloaded images to extract potential parcel numbers (`numer działki`).
-- **Normalization:** Map the extracted data into a Standardized Listing JSON schema to decouple the source website from the rest of the pipeline.
+- **Scraper Flow:** Connect to a local Chrome instance in debug mode using Playwright to navigate listings (e.g., Otodom) and bypass anti-bot protections. Extracts listing metadata, descriptions, and high-quality image URLs. This step is orchestrated as a dedicated Prefect flow.
+- **Storage:** Persists the raw scraped data directly into a local PostgreSQL database (`raw_listings` table).
+- **Text Parsing Flow:** Uses a local LLM (Ollama, model `qwen2.5:14b-instruct`) to extract the exact parcel number and utility presence from unstructured text. Enforces strict schema validation using Pydantic.
+- **Normalization:** Saves the validated, extracted data into the `parsed_listings` table to decouple the unstructured source text from the rest of the spatial pipeline.
 
 ### Phase 2: Entity Resolution & Verification
 - Use the extracted parcel number and `gmina` to query the **ULDK API**.

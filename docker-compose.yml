@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgis/postgis:15-3.4-alpine
     container_name: plot_search_db
     environment:
       POSTGRES_USER: postgres
@@ -12,6 +12,17 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
+  opentripplanner:
+    image: opentripplanner/opentripplanner:latest
+    container_name: plot_search_otp
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data/otp:/var/opentripplanner
+    command: --load --serve
     restart: unless-stopped
 
 volumes:
