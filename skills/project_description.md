@@ -37,9 +37,9 @@ The system uses a **Hybrid Data Retrieval Strategy** to balance accuracy, API ra
 | **Parcel Geometry** | ULDK API (Live) | Exact polygon, area, `Ls` check |
 | **Forest/Land Use Boundaries** | EGiB (Local Dump) | Exact setbacks calculation |
 | **Flood Zones** | ISOK (Local Dump) | Hydro-geological safety |
-| **Infrastructure/Utilities** | GESUT, OSM, BDOT10k (Local) | Proximity to grids, roads |
-| **Routing (Offline)** | OTP (OpenTripPlanner) | True walking/driving distance to infrastructure |
-| **Commute (Live)** | Google Maps API | Peak-hour driving and transit times |
+| **Infrastructure/Utilities** | GESUT, OSM, BDOT10k (Local), KIUT (Live) | Proximity to grids, roads |
+| **Routing (Offline)** | OTP (OpenTripPlanner) | True multimodal peak-hour driving and transit times |
+| **Commute (Live)** | Google Maps API | Peak-hour driving and transit times with live traffic |
 | **Noise Maps** | Mapy akustyczne (Local Dump) | Acoustic environment filtering |
 | **Transaction Prices** | RCN (Local Dump) | Price validation |
 
@@ -65,8 +65,8 @@ graph TD
             G -->|Dynamic Setbacks & Coverage| H{Envelope Calculation}
         end
 
-        subgraph "Phase 4: Routing & Infrastructure (Atomic Task)"
-            H -->|Usable Envelope >= 200m2| I[Local OTP]
+        subgraph "Phase 4: Multimodal Routing (Atomic Task)"
+            H -->|Usable Envelope >= 200m2| I[Local OTP (Multithreaded)]
         end
 
         subgraph "Phase 5: Commute Check (Atomic Task)"
@@ -95,7 +95,7 @@ The pipeline is designed as a non-productionized script executed ad-hoc on a sin
   * Playwright Stealth (connecting to a local Chrome instance in debug mode to bypass anti-bot protections)
   * qwen2.5-vl:7b via Ollama (Local VLM for extracting parcel numbers from listing images)
   * Ollama (Local LLM for unstructured text parsing)
-* **Routing:** Local OpenTripPlanner (OTP) instance (offline base routing) and Google Maps Directions API
+* **Routing:** Local OpenTripPlanner (OTP) instance (offline base routing) and Google Maps Directions API.
 * **Notifications:** Telegram Bot API
 
 ## 5. Detailed Pipeline Blueprint
@@ -118,12 +118,14 @@ The pipeline is designed as a non-productionized script executed ad-hoc on a sin
 - Evaluate solar orientation based on the envelope's geometry.
 - Check intersections against ISOK (flood zones), noise maps, and infrastructure exclusion zones (power lines, ditches).
 
-### Phase 4: Routing & Infrastructure Profiling
-- Use **Local OpenTripPlanner (OTP)** to verify true walking/driving distances (not straight-line) to nearby schools, kindergartens, and supermarkets found in the PostGIS BDOT10k/OSM dumps. 
+### Phase 4: Multimodal Routing & Infrastructure Profiling
+- Execute this step **only** if the parcel has passed all previous spatial rules (`SPATIALLY_VALIDATED`) to preserve computational resources.
+- Use a **multithreaded Python orchestrator** to query the local OpenTripPlanner (OTP) GraphQL API in parallel.
+- Calculate exact multimodal transit (Car, Bicycle, Public Transit) base commute times to strict POIs (Varso Tower, Warsaw Hub) at 08:00, 14:00, and 17:00 as a pre-filter.
 
 ### Phase 5: Commute Verification (Cost-sensitive API)
-- Execute this step **only** if the parcel has passed all previous spatial, infrastructure, and hard constraint checks to avoid unnecessary API costs.
-- Query the **Google Maps Directions API** to calculate commute times to Varso Tower (Chmielna 69) during peak hours.
+- Execute this step **only** if the parcel has passed all previous spatial, infrastructure, and OTP base routing constraints to minimize API costs.
+- Query the **Google Maps Directions API** to calculate precise commute times to Varso Tower (Chmielna 69) factoring in live/historic peak-hour traffic.
 
 ### Phase 6: Scoring Engine & Alerting
 - Apply the scoring algorithm based on the aggregated metrics.

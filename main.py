@@ -8,6 +8,7 @@ from flows.scraper import scrape_flow
 from flows.parser import parse_flow
 from flows.geocoder import geocode_flow
 from flows.spatial import spatial_flow
+from flows.router import run_routing_flow
 from database import init_db
 
 @flow(name="Master Plot Search Pipeline")
@@ -34,6 +35,11 @@ def master_pipeline(mode="incremental"):
     print(f"Executing Spatial Filtering Flow")
     print(f"====================================")
     spatial_flow()
+
+    print(f"\n====================================")
+    print(f"Executing Routing Flow")
+    print(f"====================================")
+    run_routing_flow()
 
 if __name__ == "__main__":
     import argparse

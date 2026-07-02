@@ -115,33 +115,54 @@ def evaluate_parcel_routes(db_session, listing):
 
 @flow(name="Multimodal Route Evaluation")
 def run_routing_flow():
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from tqdm import tqdm
+    
     db = SessionLocal()
     try:
         # Fetch geocoded listings that haven't been routed
-        listings_to_route = db.query(ParsedListing).options(
-            joinedload(ParsedListing.raw_listing),
-            joinedload(ParsedListing.geocoded_parcel)
-        ).filter(
-            ParsedListing.status == StatusEnum.GEOCODED
+        listings_to_route = db.query(ParsedListing).filter(
+            ParsedListing.status == StatusEnum.SPATIALLY_VALIDATED
         ).all()
         
-        print(f"Found {len(listings_to_route)} parcels to route.")
-        
-        success_count = 0
-        for listing in listings_to_route:
-            try:
-                success = evaluate_parcel_routes.fn(db, listing)
-                if success:
-                    success_count += 1
-                db.commit()
-            except Exception as e:
-                print(f"Failed to route parcel {listing.id}: {e}")
-                db.rollback()
-                
-        print(f"Successfully evaluated routes for {success_count} parcels.")
-        
+        listing_ids = [l.id for l in listings_to_route]
+        print(f"Found {len(listing_ids)} parcels to route.")
     finally:
         db.close()
+        
+    def process_parcel(listing_id):
+        session = SessionLocal()
+        try:
+            listing = session.query(ParsedListing).options(
+                joinedload(ParsedListing.raw_listing),
+                joinedload(ParsedListing.geocoded_parcel)
+            ).get(listing_id)
+            
+            if not listing:
+                return False
+                
+            success = evaluate_parcel_routes.fn(session, listing)
+            if success:
+                session.commit()
+                return True
+            else:
+                session.rollback()
+                return False
+        except Exception as e:
+            session.rollback()
+            return False
+        finally:
+            session.close()
+
+    success_count = 0
+    if listing_ids:
+        with ThreadPoolExecutor(max_workers=15) as executor:
+            futures = [executor.submit(process_parcel, lid) for lid in listing_ids]
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Routing Parcels (OTP)", unit="parcel"):
+                if future.result():
+                    success_count += 1
+                    
+    print(f"Successfully evaluated routes for {success_count} parcels.")
 
 if __name__ == "__main__":
     run_routing_flow()
