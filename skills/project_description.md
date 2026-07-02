@@ -38,7 +38,7 @@ The system uses a **Hybrid Data Retrieval Strategy** to balance accuracy, API ra
 | **Forest/Land Use Boundaries** | EGiB (Local Dump) | Exact setbacks calculation |
 | **Flood Zones** | ISOK (Local Dump) | Hydro-geological safety |
 | **Infrastructure/Utilities** | GESUT, OSM, BDOT10k (Local) | Proximity to grids, roads |
-| **Routing (Offline)** | OSRM (Local) | True walking/driving distance to infrastructure |
+| **Routing (Offline)** | OTP (OpenTripPlanner) | True walking/driving distance to infrastructure |
 | **Commute (Live)** | Google Maps API | Peak-hour driving and transit times |
 | **Noise Maps** | Mapy akustyczne (Local Dump) | Acoustic environment filtering |
 | **Transaction Prices** | RCN (Local Dump) | Price validation |
@@ -66,7 +66,7 @@ graph TD
         end
 
         subgraph "Phase 4: Routing & Infrastructure (Atomic Task)"
-            H -->|Usable Envelope >= 200m2| I[Local OSRM]
+            H -->|Usable Envelope >= 200m2| I[Local OTP]
         end
 
         subgraph "Phase 5: Commute Check (Atomic Task)"
@@ -85,7 +85,7 @@ graph TD
 The pipeline is designed as a non-productionized script executed ad-hoc on a single Ubuntu personal computer. 
 
 * **Infrastructure & Deployment:**
-  * Docker Compose (orchestrates PostgreSQL/PostGIS, OSRM, Ollama)
+  * Docker Compose (orchestrates PostgreSQL/PostGIS, OTP)
   * Local File System (used for debugging to store raw scraped images and HTML)
 * **Orchestration:** Prefect 2.x (adhoc execution during development, schedule configurable later)
 * **Database:** PostgreSQL with PostGIS extension (manually prepared one-time DB)
@@ -95,7 +95,7 @@ The pipeline is designed as a non-productionized script executed ad-hoc on a sin
   * Playwright Stealth (connecting to a local Chrome instance in debug mode to bypass anti-bot protections)
   * qwen2.5-vl:7b via Ollama (Local VLM for extracting parcel numbers from listing images)
   * Ollama (Local LLM for unstructured text parsing)
-* **Routing:** Local OSRM instance (offline base routing) and Google Maps Directions API
+* **Routing:** Local OpenTripPlanner (OTP) instance (offline base routing) and Google Maps Directions API
 * **Notifications:** Telegram Bot API
 
 ## 5. Detailed Pipeline Blueprint
@@ -119,8 +119,7 @@ The pipeline is designed as a non-productionized script executed ad-hoc on a sin
 - Check intersections against ISOK (flood zones), noise maps, and infrastructure exclusion zones (power lines, ditches).
 
 ### Phase 4: Routing & Infrastructure Profiling
-- Use **Local OSRM** to verify true walking/driving distances (not straight-line) to nearby schools, kindergartens, and supermarkets found in the PostGIS BDOT10k/OSM dumps. 
-- Instantly fail plots that violate hard constraints based on local spatial and infrastructure data.
+- Use **Local OpenTripPlanner (OTP)** to verify true walking/driving distances (not straight-line) to nearby schools, kindergartens, and supermarkets found in the PostGIS BDOT10k/OSM dumps. 
 
 ### Phase 5: Commute Verification (Cost-sensitive API)
 - Execute this step **only** if the parcel has passed all previous spatial, infrastructure, and hard constraint checks to avoid unnecessary API costs.

@@ -1,7 +1,13 @@
+import os
+# Suppress Prefect telemetry noise when running ephemeral local server
+os.environ["PREFECT_EXPERIMENTAL_ENABLE_EVENTS_CLIENT"] = "false"
+os.environ["PREFECT_LOGGING_LEVEL"] = "ERROR"
+
 from prefect import flow
 from flows.scraper import scrape_flow
 from flows.parser import parse_flow
 from flows.geocoder import geocode_flow
+from flows.spatial import spatial_flow
 from database import init_db
 
 @flow(name="Master Plot Search Pipeline")
@@ -23,6 +29,11 @@ def master_pipeline(mode="incremental"):
     print(f"Executing Geocoder Flow")
     print(f"====================================")
     geocode_flow()
+
+    print(f"\n====================================")
+    print(f"Executing Spatial Filtering Flow")
+    print(f"====================================")
+    spatial_flow()
 
 if __name__ == "__main__":
     import argparse

@@ -18,10 +18,11 @@ The pipeline runs locally on an Ubuntu personal computer. It relies on a contain
 ### 1.1 Directory Structure
 ```text
 .
-├── docker-compose.yml     # Infrastructure (PostgreSQL)
+├── docker-compose.yml     # Infrastructure (PostgreSQL, OTP)
 ├── main.py                # Master pipeline orchestrator
 ├── database.py            # SQLAlchemy models and schema definitions
 ├── schema.py              # Pydantic schemas for LLM extraction
+├── import_spatial_data.py # Master spatial data ingestion script
 ├── flows/                 # Prefect workflows and tasks
 │   ├── scraper.py         # Playwright Otodom scraping flow
 │   ├── parser.py          # Ollama LLM text extraction flow
@@ -37,39 +38,31 @@ The core services are orchestrated using Docker Compose.
 version: '3.8'
 
 services:
-  # Spatial Database
-  postgis:
-    image: postgis/postgis:15-3.4
+  postgres:
+    image: postgis/postgis:15-3.4-alpine
+    container_name: plot_search_db
     environment:
-      POSTGRES_USER: user
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: plot_search
     ports:
       - "5432:5432"
     volumes:
-      - postgis_data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
 
-  # Local LLM for text extraction
-  ollama:
-    image: ollama/ollama
+  opentripplanner:
+    image: opentripplanner/opentripplanner:latest
+    container_name: plot_search_otp
     ports:
-      - "11434:11434"
+      - "8080:8080"
     volumes:
-      - ollama_data:/root/.ollama
-    # Note: Ensure 'ollama run <model_name>' is executed post-startup
-
-  # Routing Engine (Used in later steps)
-  osrm:
-    image: osrm/osrm-backend
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./data/osrm:/data
-    # Note: Requires processing the OSM map data beforehand
+      - ./data/otp:/var/opentripplanner
+    command: --load --serve
+    restart: unless-stopped
 
 volumes:
-  postgis_data:
-  ollama_data:
+  pgdata:
 ```
 
 ## 2. Database Schema

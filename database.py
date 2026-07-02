@@ -14,9 +14,11 @@ class StatusEnum(str, enum.Enum):
     NEW = "NEW"
     PARSED = "PARSED"
     GEOCODED = "GEOCODED"
+    SPATIALLY_VALIDATED = "SPATIALLY_VALIDATED"
     ROUTED = "ROUTED"
     FAILED_PARSING = "FAILED_PARSING"
     FAILED_GEOCODING = "FAILED_GEOCODING"
+    FAILED_SPATIAL_RULES = "FAILED_SPATIAL_RULES"
     FAILED_ROUTING = "FAILED_ROUTING"
 
 class RawListing(Base):
@@ -52,6 +54,7 @@ class ParsedListing(Base):
 
     raw_listing = relationship("RawListing", back_populates="parsed_listing")
     geocoded_parcel = relationship("GeocodedParcel", back_populates="parsed_listing", uselist=False)
+    spatial_evaluation = relationship("SpatialEvaluation", back_populates="parsed_listing", uselist=False, cascade="all, delete-orphan")
     route_evaluations = relationship("RouteEvaluation", back_populates="parsed_listing", cascade="all, delete-orphan")
 
 class GeocodedParcel(Base):
@@ -66,6 +69,39 @@ class GeocodedParcel(Base):
     geocoded_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     parsed_listing = relationship("ParsedListing", back_populates="geocoded_parcel")
+
+class SpatialEvaluation(Base):
+    __tablename__ = "spatial_evaluations"
+
+    id = Column(String, ForeignKey("parsed_listings.id"), primary_key=True)
+    geometry_category = Column(String, nullable=False) # A_PRECISE, B_UNSUBDIVIDED, C_POINT, D_NONE
+    
+    # Measurements
+    forest_distance_m = Column(Float, nullable=True)
+    usable_building_area_m2 = Column(Float, nullable=True)
+    fits_200m2_house = Column(Boolean, nullable=True)
+    intersects_flood_zone = Column(Boolean, nullable=True)
+    power_line_distance_m = Column(Float, nullable=True)
+    railway_distance_m = Column(Float, nullable=True)
+    
+    # Utilities (from KIUT color analysis)
+    has_water = Column(Boolean, nullable=True)
+    has_sewage = Column(Boolean, nullable=True)
+    has_gas = Column(Boolean, nullable=True)
+    has_electricity = Column(Boolean, nullable=True)
+    has_telecom = Column(Boolean, nullable=True)
+
+    water_distance_m = Column(Float, nullable=True)
+    
+    # Amenities & Infrastructure Distances
+    distance_to_train_station_m = Column(Float, nullable=True)
+    distance_to_school_m = Column(Float, nullable=True)
+    distance_to_kindergarten_m = Column(Float, nullable=True)
+    distance_to_drainage_m = Column(Float, nullable=True)
+    
+    evaluated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    parsed_listing = relationship("ParsedListing", back_populates="spatial_evaluation")
 
 class RouteEvaluation(Base):
     __tablename__ = "route_evaluations"
