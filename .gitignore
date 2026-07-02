@@ -4,3 +4,4 @@ __pychache__
 data
 .venv
 raw_maps
+flows/__pychache__/**
