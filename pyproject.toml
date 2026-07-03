@@ -23,4 +23,5 @@ dependencies = [
     "seaborn>=0.13.2",
     "tqdm>=4.68.3",
     "python-telegram-bot>=22.8",
+    "python-dotenv>=1.2.2",
 ]

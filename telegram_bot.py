@@ -5,10 +5,13 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from sqlalchemy.orm import joinedload
 from database import get_db, ParsedListing, StatusEnum
 from flows.scorer import calculate_score
+from dotenv import load_dotenv
 
-TOKEN = "8860337033:AAGtuLkNuBbE4fWdexmPfQQGPUQ73LHnX_A"
+load_dotenv()
+
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 NOTIFIED_FILE = "notified_plots.json"
-WEBAPP_URL = os.getenv("MAP_WEBAPP_URL", "https://vyacheslavgorb.github.io/plot_search/map_webapp.html")
+WEBAPP_URL = os.getenv("MAP_WEBAPP_URL")
 
 def load_notified():
     if os.path.exists(NOTIFIED_FILE):
