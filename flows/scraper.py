@@ -38,12 +38,32 @@ def save_raw_listing(payload: dict) -> bool:
     finally:
         db.close()
 
+class ChromeManager:
+    def __init__(self):
+        import subprocess, time
+        print("Starting Chrome...")
+        chrome_cmd = [
+            "google-chrome",
+            "--remote-debugging-port=9222",
+            "--user-data-dir=/tmp/chrome-debug"
+        ]
+        self.process = subprocess.Popen(chrome_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(3) # Wait for Chrome to initialize
+    def __enter__(self):
+        return self
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        print("Stopping Chrome...")
+        try:
+            self.process.terminate()
+            self.process.wait(timeout=5)
+        except Exception as e:
+            print(f"Error stopping Chrome: {e}")
+
 @flow(name="Scrape Otodom Listings")
 def scrape_flow(mode="incremental"):
     print(f"Starting scraper in {mode} mode.")
-    print(f"Connecting to Chrome running on {CHROME_CDP}...")
     
-    with sync_playwright() as p:
+    with ChromeManager(), sync_playwright() as p:
         try:
             browser = p.chromium.connect_over_cdp(CHROME_CDP)
         except Exception as e:
