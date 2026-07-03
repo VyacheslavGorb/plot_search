@@ -38,7 +38,9 @@ def get_routed_distance(origin_lat, origin_lon, dest_lat, dest_lon):
 
 def get_geometry_category(parcel: GeocodedParcel) -> str:
     if not parcel.polygon_wkt:
-        return "C_POINT" if parcel.parsed_listing.raw_listing.location_lat else "D_NONE"
+        if parcel.parsed_listing.raw_listing.is_exact_location:
+            return "C_EXACT_POINT"
+        return "C_APPROX_POINT" if parcel.parsed_listing.raw_listing.location_lat else "D_NONE"
         
     if parcel.is_unsubdivided:
         return "B_UNSUBDIVIDED"
@@ -48,6 +50,25 @@ def get_geometry_category(parcel: GeocodedParcel) -> str:
 def evaluate_parcel_spatial_rules(db: Session, parcel: GeocodedParcel) -> SpatialEvaluation:
     category = get_geometry_category(parcel)
     
+    if category in ["A_PRECISE_POLYGON", "B_UNSUBDIVIDED"]:
+        wkt = parcel.polygon_wkt
+        geom_sql = f"ST_Transform(ST_GeomFromEWKT('{wkt}'), 2180)" if wkt.startswith("SRID=") else f"ST_GeomFromText('{wkt}', 2180)"
+        shape_query = text(f"SELECT ST_Area({geom_sql}), ST_Perimeter({geom_sql})")
+        try:
+            res = db.execute(shape_query).first()
+            if res and res[1] > 0:
+                area, perim = res[0], res[1]
+                pp = (4 * 3.14159 * area) / (perim * perim)
+                ap = area / perim
+                if pp < 0.15 and ap < 5.0:
+                    if parcel.parsed_listing.raw_listing.is_exact_location:
+                        category = "C_EXACT_POINT"
+                    else:
+                        category = "C_APPROX_POINT"
+                    parcel.polygon_wkt = None
+        except Exception as e:
+            print(f"Shape check failed: {e}")
+
     evaluation = SpatialEvaluation(
         id=parcel.id,
         geometry_category=category
@@ -57,10 +78,11 @@ def evaluate_parcel_spatial_rules(db: Session, parcel: GeocodedParcel) -> Spatia
         return evaluation
         
     if category in ["A_PRECISE_POLYGON", "B_UNSUBDIVIDED"]:
-        if parcel.polygon_wkt.startswith("SRID="):
-            geom_sql = f"ST_Transform(ST_GeomFromEWKT('{parcel.polygon_wkt}'), 2180)"
+        wkt = parcel.polygon_wkt
+        if wkt.startswith("SRID="):
+            geom_sql = f"ST_Transform(ST_GeomFromEWKT('{wkt}'), 2180)"
         else:
-            geom_sql = f"ST_GeomFromText('{parcel.polygon_wkt}', 2180)"
+            geom_sql = f"ST_GeomFromText('{wkt}', 2180)"
     else:
         lat = parcel.parsed_listing.raw_listing.location_lat
         lon = parcel.parsed_listing.raw_listing.location_lon
@@ -154,13 +176,8 @@ def evaluate_parcel_spatial_rules(db: Session, parcel: GeocodedParcel) -> Spatia
         '"funkcjaOgolnaBudynku" ILIKE \'%szpital%\' OR "funkcjaSzczegolowaBudynku" ILIKE \'%szpital%\'', 10000)
     
     # --- 6. Train Stations ---
-    train_query = text(f"""
-        SELECT MIN(ST_Distance({geom_sql}, geometry)) 
-        FROM bdot_bubd_a 
-        WHERE ST_DWithin({geom_sql}, geometry, 10000)
-        AND ("funkcjaSzczegolowaBudynku" ILIKE '%dworzec kolejowy%')
-    """)
-    evaluation.distance_to_train_station_m = db.execute(train_query).scalar()
+    evaluation.distance_to_train_station_m = fetch_amenity_dist(
+        '"funkcjaSzczegolowaBudynku" ILIKE \'%dworzec kolejowy%\'', 10000)
     
     # --- 7. Drainage Ditches (Rowy Melioracyjne) ---
     drainage_query = text(f"""

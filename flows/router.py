@@ -16,9 +16,7 @@ TARGETS = {
 }
 
 MODES = {
-    "CAR_ONLY": "[{mode: CAR}]",
-    "CAR_TRANSIT": "[{mode: CAR}, {mode: TRANSIT}, {mode: WALK}]",
-    "BICYCLE_TRANSIT": "[{mode: BICYCLE}, {mode: TRANSIT}, {mode: WALK}]"
+    "CAR_ONLY": "[{mode: CAR}]"
 }
 
 TIMES = {

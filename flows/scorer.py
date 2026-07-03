@@ -159,21 +159,21 @@ def calculate_score(listing: ParsedListing) -> dict:
         else:
              good_reasons.append("❌ COMMUTE (CAR): Data missing")
                 
-        # Transit commute
-        transit_varso = [r.time_0800_mins for r in routes if r.target_name == "VARSO_TOWER" and r.route_mode in ["CAR_TRANSIT", "BICYCLE_TRANSIT"] and r.time_0800_mins]
-        if transit_varso:
-            best_transit = min(transit_varso)
-            if best_transit < 60:
-                score += 100
-                good_reasons.append(f"✅ COMMUTE (TRANSIT): Good option to Varso Tower ({best_transit:.0f} min)")
-            elif best_transit > 90:
-                score -= 50
-                good_reasons.append(f"❌ COMMUTE (TRANSIT): Poor option to Varso Tower ({best_transit:.0f} min)")
-            else:
-                good_reasons.append(f"✅ COMMUTE (TRANSIT): Acceptable option to Varso Tower ({best_transit:.0f} min)")
+    # 11. Train Station Proximity
+    if spatial.distance_to_train_station_m is not None:
+        # Since we use route builder, distances might be a bit longer than straight line.
+        if spatial.distance_to_train_station_m < 5000:
+            score += 100
+            good_reasons.append(f"✅ TRAIN STATION: Nearby commute ({spatial.distance_to_train_station_m / 1000:.2f}km drive)")
+        elif spatial.distance_to_train_station_m < 10000:
+            score += 50
+            good_reasons.append(f"✅ TRAIN STATION: Acceptable commute ({spatial.distance_to_train_station_m / 1000:.2f}km drive)")
         else:
-            good_reasons.append("❌ COMMUTE (TRANSIT): Data missing")
+            good_reasons.append(f"❌ TRAIN STATION: Far ({spatial.distance_to_train_station_m / 1000:.2f}km drive)")
     else:
+        good_reasons.append("❌ TRAIN STATION: None detected nearby")
+        
+    if not routes:
         good_reasons.append("❌ COMMUTE: No routing data available")
 
     # 13. Price
@@ -191,9 +191,12 @@ def calculate_score(listing: ParsedListing) -> dict:
         good_reasons.append("❌ PRICE: Not specified")
 
     cat_map = {
+        "A_PRECISE_POLYGON": "ℹ️ LOCATION: Correct precise polygon",
         "A_PRECISE": "ℹ️ LOCATION: Correct precise polygon",
         "B_UNSUBDIVIDED": "⚠️ LOCATION: Unsubdivided polygon",
-        "C_POINT": "⚠️ LOCATION: Approximate area/point location only",
+        "C_EXACT_POINT": "⚠️ LOCATION: Exact point (polygon unavailable/rejected)",
+        "C_APPROX_POINT": "⚠️ LOCATION: Approximate general area only",
+        "C_POINT": "⚠️ LOCATION: Approximate point/area location",
         "D_NONE": "❌ LOCATION: No geometry available"
     }
     location_type = cat_map.get(spatial.geometry_category, f"ℹ️ LOCATION: {spatial.geometry_category}")

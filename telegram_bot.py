@@ -56,7 +56,9 @@ def get_best_next_parcel():
                     "reasons": res["reasons"],
                     "wkt": res.get("wkt"),
                     "lat": res.get("lat"),
-                    "lon": res.get("lon")
+                    "lon": res.get("lon"),
+                    "price": res.get("price"),
+                    "area": res.get("area")
                 }
                 
         return best_parcel
@@ -75,6 +77,12 @@ async def next_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         
     msg = f"🏆 *New Golden Parcel Found!*\n\n"
     msg += f"🔗 [View on Otodom]({best_parcel['url']})\n"
+    if best_parcel.get('price'):
+        price_str = f"{best_parcel['price']:,.0f}".replace(",", " ")
+        msg += f"💰 *Price:* {price_str} PLN"
+        if best_parcel.get('area'):
+            msg += f" ({best_parcel['area']:,.0f} m²)"
+        msg += "\n"
     msg += f"⭐ *Score:* {best_parcel['score']}/{best_parcel['max_score']}\n"
     msg += f"📍 *{best_parcel['location_type']}*\n\n"
     msg += "*Why it matched:* \n"
@@ -86,13 +94,16 @@ async def next_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         import urllib.parse
         params = []
         if best_parcel.get("wkt"):
-            params.append(f"wkt={urllib.parse.quote(best_parcel['wkt'])}")
+            wkt_str = best_parcel['wkt']
+            if wkt_str.startswith("SRID="):
+                wkt_str = wkt_str.split(";", 1)[-1]
+            params.append(f"wkt={urllib.parse.quote(wkt_str)}")
         if best_parcel.get("lat"):
             params.append(f"lat={best_parcel['lat']}&lon={best_parcel['lon']}")
             
         map_url = f"{WEBAPP_URL}?{'&'.join(params)}"
         keyboard = [
-            [InlineKeyboardButton("🗺️ View Map", web_app=WebAppInfo(url=map_url))]
+            [InlineKeyboardButton("🗺️ View Map", url=map_url)]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
