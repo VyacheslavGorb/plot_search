@@ -1,6 +1,6 @@
 import json
 import os
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from sqlalchemy.orm import joinedload
 from database import get_db, ParsedListing, StatusEnum
@@ -8,6 +8,7 @@ from flows.scorer import calculate_score
 
 TOKEN = "8860337033:AAGtuLkNuBbE4fWdexmPfQQGPUQ73LHnX_A"
 NOTIFIED_FILE = "notified_plots.json"
+WEBAPP_URL = os.getenv("MAP_WEBAPP_URL", "https://your-domain.com/map_webapp.html")
 
 def load_notified():
     if os.path.exists(NOTIFIED_FILE):
@@ -25,7 +26,8 @@ def get_best_next_parcel():
         listings = db.query(ParsedListing).options(
             joinedload(ParsedListing.raw_listing),
             joinedload(ParsedListing.spatial_evaluation),
-            joinedload(ParsedListing.route_evaluations)
+            joinedload(ParsedListing.route_evaluations),
+            joinedload(ParsedListing.geocoded_parcel)
         ).filter(
             ParsedListing.status.in_([StatusEnum.SPATIALLY_VALIDATED, StatusEnum.ROUTED])
         ).all()
@@ -48,7 +50,10 @@ def get_best_next_parcel():
                     "score": res["score"],
                     "max_score": res["max_score"],
                     "location_type": res.get("location_type", "ℹ️ LOCATION: Unknown"),
-                    "reasons": res["reasons"]
+                    "reasons": res["reasons"],
+                    "wkt": res.get("wkt"),
+                    "lat": res.get("lat"),
+                    "lon": res.get("lon")
                 }
                 
         return best_parcel
@@ -73,7 +78,22 @@ async def next_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     for reason in best_parcel['reasons']:
         msg += f"• {reason}\n"
         
-    await update.message.reply_text(msg, parse_mode="Markdown", disable_web_page_preview=False)
+    reply_markup = None
+    if best_parcel.get("wkt") or (best_parcel.get("lat") and best_parcel.get("lon")):
+        import urllib.parse
+        params = []
+        if best_parcel.get("wkt"):
+            params.append(f"wkt={urllib.parse.quote(best_parcel['wkt'])}")
+        if best_parcel.get("lat"):
+            params.append(f"lat={best_parcel['lat']}&lon={best_parcel['lon']}")
+            
+        map_url = f"{WEBAPP_URL}?{'&'.join(params)}"
+        keyboard = [
+            [InlineKeyboardButton("🗺️ View Map", web_app=WebAppInfo(url=map_url))]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+    await update.message.reply_text(msg, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=reply_markup)
     
     notified = load_notified()
     notified.add(best_parcel["id"])

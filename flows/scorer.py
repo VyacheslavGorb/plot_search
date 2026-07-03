@@ -198,6 +198,8 @@ def calculate_score(listing: ParsedListing) -> dict:
     }
     location_type = cat_map.get(spatial.geometry_category, f"ℹ️ LOCATION: {spatial.geometry_category}")
 
+    wkt = listing.geocoded_parcel.polygon_wkt if listing.geocoded_parcel else None
+
     reasons = bad_reasons + good_reasons
     return {
         "score": score, 
@@ -205,7 +207,10 @@ def calculate_score(listing: ParsedListing) -> dict:
         "location_type": location_type,
         "reasons": reasons, 
         "price": raw.price, 
-        "area": raw.area
+        "area": raw.area,
+        "wkt": wkt,
+        "lat": raw.location_lat,
+        "lon": raw.location_lon
     }
     
 @flow(name="Scoring Engine")
@@ -215,7 +220,8 @@ def run_scoring_flow(print_top=10):
         listings = db.query(ParsedListing).options(
             joinedload(ParsedListing.raw_listing),
             joinedload(ParsedListing.spatial_evaluation),
-            joinedload(ParsedListing.route_evaluations)
+            joinedload(ParsedListing.route_evaluations),
+            joinedload(ParsedListing.geocoded_parcel)
         ).filter(
             ParsedListing.status.in_([StatusEnum.SPATIALLY_VALIDATED, StatusEnum.ROUTED])
         ).all()
@@ -231,7 +237,10 @@ def run_scoring_flow(print_top=10):
                 "score": res["score"],
                 "max_score": res["max_score"],
                 "location_type": res["location_type"],
-                "reasons": res["reasons"]
+                "reasons": res["reasons"],
+                "wkt": res["wkt"],
+                "lat": res["lat"],
+                "lon": res["lon"]
             })
             
         # Sort by score descending
