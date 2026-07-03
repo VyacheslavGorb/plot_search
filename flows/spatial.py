@@ -35,6 +35,15 @@ def evaluate_parcel(listing_id: str):
                 passed = False
                 reason += f"Cannot fit a 200m2 house layout. "
 
+        # 4. Noise factors (Major Roads & Railways)
+        if evaluation.major_road_distance_m is not None and evaluation.major_road_distance_m < 150:
+            passed = False
+            reason += f"Too close to a major road ({evaluation.major_road_distance_m:.1f}m). "
+            
+        if evaluation.railway_distance_m is not None and evaluation.railway_distance_m < 150:
+            passed = False
+            reason += f"Too close to railway ({evaluation.railway_distance_m:.1f}m). "
+
         # 4. Utilities Extraction (KIUT)
         from flows.kiut import get_kiut_utilities
         try:
@@ -68,12 +77,12 @@ def spatial_flow():
     db: Session = next(get_db())
     try:
         from database import SpatialEvaluation
-        # Find all geocoded or routed listings that haven't been spatially checked
+        # Find all geocoded listings that haven't been spatially checked
         pending = db.query(ParsedListing).outerjoin(
             SpatialEvaluation, ParsedListing.id == SpatialEvaluation.id
         ).filter(
             SpatialEvaluation.id == None,
-            ParsedListing.status.in_([StatusEnum.GEOCODED, StatusEnum.ROUTED])
+            ParsedListing.status == StatusEnum.GEOCODED
         ).all()
         pending_ids = [p.id for p in pending]
     finally:

@@ -2,6 +2,39 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from database import SpatialEvaluation, GeocodedParcel
 import json
+import urllib.request
+
+def get_routed_distance(origin_lat, origin_lon, dest_lat, dest_lon):
+    if origin_lat is None or origin_lon is None or dest_lat is None or dest_lon is None:
+        return None
+    query = f'''
+    {{
+      plan(
+        from: {{lat: {origin_lat}, lon: {origin_lon}}}
+        to: {{lat: {dest_lat}, lon: {dest_lon}}}
+        transportModes: [{{mode: CAR}}]
+      ) {{
+        itineraries {{
+          legs {{
+            distance
+          }}
+        }}
+      }}
+    }}
+    '''
+    req = urllib.request.Request("http://localhost:8080/otp/routers/default/index/graphql", data=json.dumps({'query': query}).encode('utf-8'))
+    req.add_header('Content-Type', 'application/json')
+    try:
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode())
+            itins = data.get('data', {}).get('plan', {}).get('itineraries', [])
+            if not itins:
+                return None
+            total_dist = sum(leg['distance'] for leg in itins[0]['legs'])
+            return total_dist
+    except Exception as e:
+        print(f"OTP routing failed: {e}")
+        return None
 
 def get_geometry_category(parcel: GeocodedParcel) -> str:
     if not parcel.polygon_wkt:
@@ -58,23 +91,67 @@ def evaluate_parcel_spatial_rules(db: Session, parcel: GeocodedParcel) -> Spatia
     """)
     evaluation.forest_distance_m = db.execute(forest_query).scalar()
     
-    # --- 4. Schools ---
-    school_query = text(f"""
+    # --- Major Roads (Noise Factor) ---
+    major_road_query = text(f"""
         SELECT MIN(ST_Distance({geom_sql}, geometry)) 
-        FROM bdot_bubd_a 
-        WHERE ST_DWithin({geom_sql}, geometry, 5000)
-        AND ("funkcjaOgolnaBudynku" ILIKE '%szko%' OR "funkcjaSzczegolowaBudynku" ILIKE '%szko%')
+        FROM bdot_skdr_l 
+        WHERE ST_DWithin({geom_sql}, geometry, 1000)
+        AND "klasaDrogi" IN ('autostrada', 'droga ekspresowa', 'droga główna ruchu przyśpieszonego', 'droga główna')
     """)
-    evaluation.distance_to_school_m = db.execute(school_query).scalar()
+    evaluation.major_road_distance_m = db.execute(major_road_query).scalar()
+    
+    # --- Railways (Noise Factor) ---
+    railway_query = text(f"""
+        SELECT MIN(ST_Distance({geom_sql}, geometry)) 
+        FROM bdot_sktr_l 
+        WHERE ST_DWithin({geom_sql}, geometry, 1000)
+    """)
+    evaluation.railway_distance_m = db.execute(railway_query).scalar()
+
+# Helper for amenities
+    origin_lat = parcel.parsed_listing.raw_listing.location_lat
+    origin_lon = parcel.parsed_listing.raw_listing.location_lon
+    
+    if not origin_lat or not origin_lon:
+        if parcel.polygon_wkt:
+            coords_query = text(f"SELECT ST_Y(ST_Transform({geom_sql}, 4326)), ST_X(ST_Transform({geom_sql}, 4326))")
+            res = db.execute(coords_query).first()
+            if res:
+                origin_lat, origin_lon = res[0], res[1]
+
+    def fetch_amenity_dist(condition, radius):
+        query = text(f'''
+            SELECT ST_Y(ST_Transform(ST_Centroid(geometry), 4326)) AS lat, 
+                   ST_X(ST_Transform(ST_Centroid(geometry), 4326)) AS lon,
+                   ST_Distance({geom_sql}, geometry) as straight_dist
+            FROM bdot_bubd_a 
+            WHERE ST_DWithin({geom_sql}, geometry, {radius})
+            AND ({condition})
+            ORDER BY ST_Distance({geom_sql}, geometry) ASC
+            LIMIT 1
+        ''')
+        row = db.execute(query).first()
+        if not row:
+            return None
+        dest_lat, dest_lon, straight_dist = row[0], row[1], row[2]
+        routed = get_routed_distance(origin_lat, origin_lon, dest_lat, dest_lon)
+        return routed if routed is not None else straight_dist
+
+    # --- 4. Schools ---
+    evaluation.distance_to_school_m = fetch_amenity_dist(
+        '"funkcjaOgolnaBudynku" ILIKE \'%szko%\' OR "funkcjaSzczegolowaBudynku" ILIKE \'%szko%\'', 5000)
     
     # --- 5. Kindergartens ---
-    kindergarten_query = text(f"""
-        SELECT MIN(ST_Distance({geom_sql}, geometry)) 
-        FROM bdot_bubd_a 
-        WHERE ST_DWithin({geom_sql}, geometry, 5000)
-        AND ("funkcjaOgolnaBudynku" ILIKE '%przedszkole%' OR "funkcjaSzczegolowaBudynku" ILIKE '%przedszkole%')
-    """)
-    evaluation.distance_to_kindergarten_m = db.execute(kindergarten_query).scalar()
+    evaluation.distance_to_kindergarten_m = fetch_amenity_dist(
+        '"funkcjaOgolnaBudynku" ILIKE \'%przedszkole%\' OR "funkcjaSzczegolowaBudynku" ILIKE \'%przedszkole%\'', 5000)
+    
+    # --- Nurseries (Żłobki) ---
+    evaluation.distance_to_nursery_m = fetch_amenity_dist(
+        '"funkcjaOgolnaBudynku" ILIKE \'%żłob%\' OR "funkcjaSzczegolowaBudynku" ILIKE \'%żłob%\' OR "funkcjaOgolnaBudynku" ILIKE \'%zlob%\' OR "funkcjaSzczegolowaBudynku" ILIKE \'%zlob%\'', 5000)
+    
+    # --- Hospitals ---
+    evaluation.distance_to_hospital_m = fetch_amenity_dist(
+        '"funkcjaOgolnaBudynku" ILIKE \'%szpital%\' OR "funkcjaSzczegolowaBudynku" ILIKE \'%szpital%\'', 10000)
     
     # --- 6. Train Stations ---
     train_query = text(f"""

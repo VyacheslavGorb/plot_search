@@ -83,6 +83,7 @@ class SpatialEvaluation(Base):
     intersects_flood_zone = Column(Boolean, nullable=True)
     power_line_distance_m = Column(Float, nullable=True)
     railway_distance_m = Column(Float, nullable=True)
+    major_road_distance_m = Column(Float, nullable=True)
     
     # Utilities (from KIUT color analysis)
     has_water = Column(Boolean, nullable=True)
@@ -97,6 +98,8 @@ class SpatialEvaluation(Base):
     distance_to_train_station_m = Column(Float, nullable=True)
     distance_to_school_m = Column(Float, nullable=True)
     distance_to_kindergarten_m = Column(Float, nullable=True)
+    distance_to_nursery_m = Column(Float, nullable=True)
+    distance_to_hospital_m = Column(Float, nullable=True)
     distance_to_drainage_m = Column(Float, nullable=True)
     
     evaluated_at = Column(DateTime, default=datetime.datetime.utcnow)

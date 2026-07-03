@@ -48,7 +48,7 @@ A Python module using PostGIS and Shapely has been created to execute the matrix
 
 ### 3.2 Prefect Flow Integration (`flows/spatial.py`) - [x] COMPLETED
 A Prefect flow wraps the queries to:
-1. Select all parcels from `parsed_listings` that are `GEOCODED` or `ROUTED` but have no spatial evaluation.
+1. Select all parcels from `parsed_listings` that are `GEOCODED` but have no spatial evaluation.
 2. Execute the appropriate spatial SQL/Shapely queries based on geometry category.
 3. Update the database state to either pass the parcel (`SPATIALLY_VALIDATED`) or fail it permanently (`FAILED_SPATIAL_RULES`).
 
