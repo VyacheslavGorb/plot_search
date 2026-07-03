@@ -195,7 +195,7 @@ def geocode_flow():
                 parcel_number=parsed.parcel_number
             )
             
-            if result["success"]:
+            if result["success"] or (raw.location_lat and raw.location_lon):
                 geocoded_record = GeocodedParcel(
                     id=parsed.id,
                     teryt=result["teryt"],

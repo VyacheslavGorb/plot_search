@@ -14,12 +14,25 @@ def calculate_score(listing: ParsedListing) -> dict:
     if not spatial:
         return {"score": 0, "reasons": ["❌ No spatial evaluation found"]}
         
+    needs_verification = False
+    if spatial.geometry_category not in ["A_PRECISE_POLYGON", "A_PRECISE", "B_UNSUBDIVIDED"]:
+        needs_verification = True
+        
     raw = listing.raw_listing
     
     # === BAD THINGS (Penalties / Risks) ===
+    # 0. Shape Layout Check
+    if spatial.geometry_category == "A_PRECISE_POLYGON":
+        if spatial.fits_200m2_house is False:
+            score -= 500
+            needs_verification = True
+            bad_reasons.append("❌ SHAPE: Cannot fit a standard 200m² square house footprint")
+        else:
+            good_reasons.append("✅ SHAPE: Fits standard 200m² house footprint")
     # 1. Flood zone
     if spatial.intersects_flood_zone:
         score -= 1000
+        needs_verification = True
         bad_reasons.append("❌ FLOOD ZONE: Intersects flood zone")
     else:
         bad_reasons.append("✅ FLOOD ZONE: Safe (No intersection)")
@@ -28,6 +41,7 @@ def calculate_score(listing: ParsedListing) -> dict:
     if spatial.power_line_distance_m is not None:
         if spatial.power_line_distance_m < 50:
             score -= 500
+            needs_verification = True
             bad_reasons.append(f"❌ HIGH VOLTAGE: Very close ({spatial.power_line_distance_m / 1000:.2f}km)")
         elif spatial.power_line_distance_m < 150:
             score -= 100
@@ -39,7 +53,11 @@ def calculate_score(listing: ParsedListing) -> dict:
 
     # 3. Railway
     if spatial.railway_distance_m is not None:
-        if spatial.railway_distance_m < 500:
+        if spatial.railway_distance_m < 150:
+            score -= 300
+            needs_verification = True
+            bad_reasons.append(f"❌ RAILWAY: Very close ({spatial.railway_distance_m / 1000:.2f}km)")
+        elif spatial.railway_distance_m < 500:
             score -= 300
             bad_reasons.append(f"❌ RAILWAY: Very close ({spatial.railway_distance_m / 1000:.2f}km)")
         else:
@@ -49,7 +67,11 @@ def calculate_score(listing: ParsedListing) -> dict:
         
     # 4. Major Road
     if spatial.major_road_distance_m is not None:
-        if spatial.major_road_distance_m < 300:
+        if spatial.major_road_distance_m < 150:
+            score -= 150
+            needs_verification = True
+            bad_reasons.append(f"❌ MAJOR ROAD: Close / Noise risk ({spatial.major_road_distance_m / 1000:.2f}km)")
+        elif spatial.major_road_distance_m < 300:
             score -= 150
             bad_reasons.append(f"❌ MAJOR ROAD: Close / Noise risk ({spatial.major_road_distance_m / 1000:.2f}km)")
         else:
@@ -204,6 +226,11 @@ def calculate_score(listing: ParsedListing) -> dict:
     wkt = listing.geocoded_parcel.polygon_wkt if listing.geocoded_parcel else None
 
     reasons = bad_reasons + good_reasons
+    
+    if needs_verification:
+        score = 0
+        reasons.insert(0, "🚨 **ADDITIONAL VERIFICATION NEEDED: Missing exact boundary or major spatial warning!**")
+        
     return {
         "score": score, 
         "max_score": MAX_SCORE, 

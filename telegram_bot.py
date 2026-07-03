@@ -103,8 +103,12 @@ async def next_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             
         map_url = f"{WEBAPP_URL}?{'&'.join(params)}"
         keyboard = [
-            [InlineKeyboardButton("🗺️ View Map", url=map_url)]
+            [InlineKeyboardButton("🗺️ View Polygon Map", url=map_url)]
         ]
+        
+        if best_parcel.get("lat") and best_parcel.get("lon"):
+            google_maps_url = f"https://www.google.com/maps/search/?api=1&query={best_parcel['lat']},{best_parcel['lon']}"
+            keyboard.append([InlineKeyboardButton("🌍 Open in Google Maps", url=google_maps_url)])
         reply_markup = InlineKeyboardMarkup(keyboard)
         
     await update.message.reply_text(msg, parse_mode="Markdown", disable_web_page_preview=True, reply_markup=reply_markup)

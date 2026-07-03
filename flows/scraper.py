@@ -95,9 +95,8 @@ def scrape_flow(mode="incremental"):
             print(f"Scraping search page {page_num}...")
             
             listing_urls = []
-            links = page.locator('a[href*="/pl/oferta/"]').all()
-            for link in links:
-                href = link.get_attribute('href')
+            hrefs = page.evaluate("() => Array.from(document.querySelectorAll('a[href*=\"/pl/oferta/\"]')).map(a => a.getAttribute('href'))")
+            for href in hrefs:
                 if href and href.startswith('/pl/oferta/'):
                     full_url = f"https://www.otodom.pl{href}"
                     if full_url not in listing_urls:

@@ -16,35 +16,29 @@ def evaluate_parcel(listing_id: str):
         db.add(evaluation)
         
         # Apply strict business rules for PASS / FAIL
-        passed = True
         reason = ""
         
         # 1. Flood check
         if evaluation.intersects_flood_zone:
-            passed = False
             reason += "Intersects Flood Zone. "
             
         # 2. Power line check
         if evaluation.power_line_distance_m is not None and evaluation.power_line_distance_m < 50:
-            passed = False
             reason += f"Too close to power lines ({evaluation.power_line_distance_m:.1f}m). "
             
         # 3. Shape layout check (Only for Precise Polygons)
         if evaluation.geometry_category == "A_PRECISE_POLYGON":
             if not evaluation.fits_200m2_house:
-                passed = False
                 reason += f"Cannot fit a 200m2 house layout. "
 
         # 4. Noise factors (Major Roads & Railways)
         if evaluation.major_road_distance_m is not None and evaluation.major_road_distance_m < 150:
-            passed = False
             reason += f"Too close to a major road ({evaluation.major_road_distance_m:.1f}m). "
             
         if evaluation.railway_distance_m is not None and evaluation.railway_distance_m < 150:
-            passed = False
             reason += f"Too close to railway ({evaluation.railway_distance_m:.1f}m). "
 
-        # 4. Utilities Extraction (KIUT)
+        # 5. Utilities Extraction (KIUT)
         from flows.kiut import get_kiut_utilities
         try:
             utils = get_kiut_utilities(db, parsed.id)
@@ -57,12 +51,11 @@ def evaluate_parcel(listing_id: str):
         except Exception as e:
             print(f"KIUT analysis failed for {parsed.id}: {e}")
 
-        if passed:
-            parsed.status = StatusEnum.SPATIALLY_VALIDATED
-            print(f"✅ {listing_id} passed spatial rules!")
+        parsed.status = StatusEnum.SPATIALLY_VALIDATED
+        if reason:
+            print(f"⚠️ {listing_id} passed spatial rules with warnings: {reason}")
         else:
-            parsed.status = StatusEnum.FAILED_SPATIAL_RULES
-            print(f"❌ {listing_id} failed spatial rules: {reason}")
+            print(f"✅ {listing_id} passed spatial rules cleanly!")
             
         db.commit()
     except Exception as e:
