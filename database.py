@@ -20,6 +20,7 @@ class StatusEnum(str, enum.Enum):
     FAILED_GEOCODING = "FAILED_GEOCODING"
     FAILED_SPATIAL_RULES = "FAILED_SPATIAL_RULES"
     FAILED_ROUTING = "FAILED_ROUTING"
+    INACTIVE = "INACTIVE"
 
 class RawListing(Base):
     __tablename__ = "raw_listings"
