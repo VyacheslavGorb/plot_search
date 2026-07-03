@@ -8,7 +8,7 @@ from flows.scorer import calculate_score
 
 TOKEN = "8860337033:AAGtuLkNuBbE4fWdexmPfQQGPUQ73LHnX_A"
 NOTIFIED_FILE = "notified_plots.json"
-WEBAPP_URL = os.getenv("MAP_WEBAPP_URL", "https://your-domain.com/map_webapp.html")
+WEBAPP_URL = os.getenv("MAP_WEBAPP_URL", "https://vyacheslavgorb.github.io/plot_search/map_webapp.html")
 
 def load_notified():
     if os.path.exists(NOTIFIED_FILE):

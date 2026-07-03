@@ -29,10 +29,10 @@
         // Initialize map
         var map = L.map('map').setView([52.2297, 21.0122], 10);
         
-        // Dark theme tiles suitable for Telegram
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        // Standard OSM theme
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
-            attribution: '© OpenStreetMap © CARTO'
+            attribution: '© OpenStreetMap contributors'
         }).addTo(map);
 
         const urlParams = new URLSearchParams(window.location.search);
