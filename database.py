@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, String, Float, Boolean, Text, DateTime, ForeignKey, Enum as SQLEnum
+from sqlalchemy import create_engine, Column, String, Float, Boolean, Text, DateTime, ForeignKey, Enum as SQLEnum, Integer
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 import datetime
@@ -9,6 +9,20 @@ DATABASE_URL = "postgresql://postgres:password@localhost:5432/plot_search"
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+class TelegramUserState(Base):
+    __tablename__ = "telegram_user_states"
+    user_id = Column(String, primary_key=True)
+    last_menu_msg_id = Column(Integer, nullable=True)
+    last_notified_count = Column(Integer, default=0)
+
+class ParcelReview(Base):
+    __tablename__ = "parcel_reviews"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String, index=True, nullable=False)
+    listing_id = Column(String, ForeignKey("parsed_listings.id"), nullable=False)
+    rating = Column(String, nullable=False)
+    reviewed_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 class StatusEnum(str, enum.Enum):
     NEW = "NEW"
